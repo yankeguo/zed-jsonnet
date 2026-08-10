@@ -1,8 +1,83 @@
 use std::fs;
 use zed::LanguageServerId;
-use zed_extension_api::{self as zed, serde_json, settings::LspSettings, Result};
+use zed_extension_api::{
+    self as zed,
+    http_client::{HttpMethod, HttpRequest},
+    serde_json,
+    settings::LspSettings,
+    Result,
+};
 
 const LSP_GITHUB_REPO: &str = "grafana/jsonnet-language-server";
+const GITHUB_TOKEN_SETTING: &str = "github_token";
+
+/// Returns the `github_token` from the language server's
+/// `initialization_options` in the Zed settings, if any.
+fn github_token(language_server_id: &LanguageServerId, worktree: &zed::Worktree) -> Option<String> {
+    LspSettings::for_worktree(language_server_id.as_ref(), worktree)
+        .ok()
+        .and_then(|lsp_settings| lsp_settings.initialization_options)
+        .and_then(|options| {
+            options
+                .get(GITHUB_TOKEN_SETTING)
+                .and_then(|token| token.as_str())
+                .map(str::to_owned)
+        })
+        .filter(|token| !token.is_empty())
+}
+
+/// Fetches the latest GitHub release through the GitHub REST API,
+/// authenticated with the given token to avoid rate limiting.
+fn latest_github_release_with_token(token: &str) -> Result<zed::GithubRelease> {
+    let response = HttpRequest::builder()
+        .method(HttpMethod::Get)
+        .url(format!(
+            "https://api.github.com/repos/{LSP_GITHUB_REPO}/releases/latest"
+        ))
+        .header("Accept", "application/vnd.github+json")
+        .header("Authorization", format!("Bearer {token}"))
+        .header("User-Agent", "zed-jsonnet")
+        .build()
+        .map_err(|err| format!("failed to build GitHub release request: {err}"))?
+        .fetch()
+        .map_err(|err| format!("failed to fetch latest GitHub release: {err}"))?;
+
+    let body: serde_json::Value = serde_json::from_slice(&response.body)
+        .map_err(|err| format!("failed to parse GitHub release response: {err}"))?;
+
+    let version = body
+        .get("tag_name")
+        .and_then(|tag_name| tag_name.as_str())
+        .ok_or_else(|| {
+            let message = body
+                .get("message")
+                .and_then(|message| message.as_str())
+                .unwrap_or("unexpected response");
+            format!("failed to fetch latest GitHub release: {message}")
+        })?
+        .to_string();
+
+    let assets = body
+        .get("assets")
+        .and_then(|assets| assets.as_array())
+        .map(|assets| {
+            assets
+                .iter()
+                .filter_map(|asset| {
+                    Some(zed::GithubReleaseAsset {
+                        name: asset.get("name")?.as_str()?.to_string(),
+                        download_url: asset.get("browser_download_url")?.as_str()?.to_string(),
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if assets.is_empty() {
+        return Err("latest GitHub release has no assets".to_string());
+    }
+
+    Ok(zed::GithubRelease { version, assets })
+}
 
 struct JsonnetExtension {
     cached_binary_path: Option<String>,
@@ -12,6 +87,7 @@ impl JsonnetExtension {
     fn language_server_binary_path(
         &mut self,
         language_server_id: &LanguageServerId,
+        worktree: &zed::Worktree,
     ) -> Result<String> {
         if let Some(path) = &self.cached_binary_path {
             if fs::metadata(path).map_or(false, |stat| stat.is_file()) {
@@ -23,13 +99,16 @@ impl JsonnetExtension {
             &language_server_id,
             &zed::LanguageServerInstallationStatus::CheckingForUpdate,
         );
-        let release = zed::latest_github_release(
-            LSP_GITHUB_REPO,
-            zed::GithubReleaseOptions {
-                require_assets: true,
-                pre_release: false,
-            },
-        )?;
+        let release = match github_token(language_server_id, worktree) {
+            Some(token) => latest_github_release_with_token(&token)?,
+            None => zed::latest_github_release(
+                LSP_GITHUB_REPO,
+                zed::GithubReleaseOptions {
+                    require_assets: true,
+                    pre_release: false,
+                },
+            )?,
+        };
 
         let (platform, arch) = zed::current_platform();
         let asset_name = format!(
@@ -106,10 +185,10 @@ impl zed::Extension for JsonnetExtension {
     fn language_server_command(
         &mut self,
         language_server_id: &zed::LanguageServerId,
-        _worktree: &zed::Worktree,
+        worktree: &zed::Worktree,
     ) -> Result<zed::Command> {
         Ok(zed::Command {
-            command: self.language_server_binary_path(language_server_id)?,
+            command: self.language_server_binary_path(language_server_id, worktree)?,
             args: vec!["--log-level".to_string(), "info".to_string()],
             env: Default::default(),
         })
@@ -120,10 +199,15 @@ impl zed::Extension for JsonnetExtension {
         language_server_id: &LanguageServerId,
         worktree: &zed::Worktree,
     ) -> Result<Option<serde_json::Value>> {
-        let settings = LspSettings::for_worktree(language_server_id.as_ref(), worktree)
+        let mut settings = LspSettings::for_worktree(language_server_id.as_ref(), worktree)
             .ok()
             .and_then(|lsp_settings| lsp_settings.initialization_options.clone())
             .unwrap_or_default();
+        // The token is consumed by the extension itself, don't leak it to
+        // the language server.
+        if let Some(object) = settings.as_object_mut() {
+            object.remove(GITHUB_TOKEN_SETTING);
+        }
         Ok(Some(settings))
     }
 
