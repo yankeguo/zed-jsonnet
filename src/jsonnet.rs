@@ -9,20 +9,19 @@ use zed_extension_api::{
 };
 
 const LSP_GITHUB_REPO: &str = "grafana/jsonnet-language-server";
-const GITHUB_TOKEN_SETTING: &str = "github_token";
+const GITHUB_TOKEN_ENV_VAR: &str = "GITHUB_TOKEN";
 
-/// Returns the `github_token` from the language server's
-/// `initialization_options` in the Zed settings, if any.
-fn github_token(language_server_id: &LanguageServerId, worktree: &zed::Worktree) -> Option<String> {
-    LspSettings::for_worktree(language_server_id.as_ref(), worktree)
-        .ok()
-        .and_then(|lsp_settings| lsp_settings.initialization_options)
-        .and_then(|options| {
-            options
-                .get(GITHUB_TOKEN_SETTING)
-                .and_then(|token| token.as_str())
-                .map(str::to_owned)
-        })
+/// Returns the `GITHUB_TOKEN` from the user's shell environment, if any.
+///
+/// The Zed extension API offers no secure credential storage, so the token is
+/// read from the shell environment instead of being stored in plain text in
+/// `settings.json`.
+fn github_token(worktree: &zed::Worktree) -> Option<String> {
+    worktree
+        .shell_env()
+        .into_iter()
+        .find(|(name, _)| name == GITHUB_TOKEN_ENV_VAR)
+        .map(|(_, value)| value)
         .filter(|token| !token.is_empty())
 }
 
@@ -99,7 +98,7 @@ impl JsonnetExtension {
             &language_server_id,
             &zed::LanguageServerInstallationStatus::CheckingForUpdate,
         );
-        let release = match github_token(language_server_id, worktree) {
+        let release = match github_token(worktree) {
             Some(token) => latest_github_release_with_token(&token)?,
             None => zed::latest_github_release(
                 LSP_GITHUB_REPO,
@@ -199,15 +198,10 @@ impl zed::Extension for JsonnetExtension {
         language_server_id: &LanguageServerId,
         worktree: &zed::Worktree,
     ) -> Result<Option<serde_json::Value>> {
-        let mut settings = LspSettings::for_worktree(language_server_id.as_ref(), worktree)
+        let settings = LspSettings::for_worktree(language_server_id.as_ref(), worktree)
             .ok()
             .and_then(|lsp_settings| lsp_settings.initialization_options.clone())
             .unwrap_or_default();
-        // The token is consumed by the extension itself, don't leak it to
-        // the language server.
-        if let Some(object) = settings.as_object_mut() {
-            object.remove(GITHUB_TOKEN_SETTING);
-        }
         Ok(Some(settings))
     }
 

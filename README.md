@@ -27,22 +27,17 @@ The extension downloads the [jsonnet-language-server][] binary from GitHub relea
 Unauthenticated requests to the GitHub API are [rate limited][4], which may cause the
 download to fail with an "API rate limit exceeded" error.
 
-To avoid this, you can configure an optional [GitHub personal access token][5] (no
-scopes are required for public repositories) in the `initialization_options` section.
-The token is only used by the extension to query the latest release and is never
-passed to the language server:
+To avoid this, you can export a [GitHub personal access token][5] (no scopes are
+required for public repositories) as the `GITHUB_TOKEN` environment variable in your
+shell profile (e.g. `~/.zshrc`):
 
 ```
-{
-  "lsp": {
-    "jsonnet-language-server": {
-      "initialization_options": {
-        "github_token": "ghp_..."
-      }
-    }
-  }
-}
+export GITHUB_TOKEN=ghp_...
 ```
+
+The extension reads the token from your shell environment, so it never has to be
+stored in plain text in `settings.json`. The token is only used by the extension to
+query the latest release and is never passed to the language server.
 
 ## Related Projects
 
