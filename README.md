@@ -6,6 +6,29 @@ This project is a hard fork of [narqo/zed-jsonnet][6], originally created by
 Vladimir Varankin <vladimir@varank.in>, and continues to be distributed under
 the Apache License 2.0.
 
+## Installation
+
+This extension is not published to the Zed extension registry and is intended
+to be installed as a [dev extension][3]:
+
+1. Clone this repository:
+
+   ```
+   % git clone https://github.com/yankeguo/zed-jsonnet
+   ```
+
+2. In Zed, open the command palette (`cmd-shift-p`), run
+   `zed: install dev extension` (or click the **Install Dev Extension** button
+   on the Extensions page) and select the cloned directory.
+
+Zed will compile the extension and the tree-sitter grammar automatically. If
+you have a published version of a Jsonnet extension installed, it will be
+overridden by the dev extension. If something goes wrong, check the log with
+`zed: open log`.
+
+To update the extension later, pull the repository and run
+`zed: install dev extension` again on the same directory.
+
 ## Features
 
 - Syntax highlighting, code folding, outline, auto-indentation and bracket
@@ -56,17 +79,9 @@ server.
 
 Refer to Zed's "[Developing Extensions][3]" documentation.
 
-### Troubleshooting
-
-1. Clean up the workspace with `make distclean`.
-2. ...
-
-### New version
-
-```
-% ./scripts/bump-version.sh <version>
-% git commit -m "Release <version>" --all
-```
+To clean up build artifacts, remove the `target/`, `grammars/` and
+`extension.wasm` paths. To cut a new version, bump the `version` field in
+both `extension.toml` and `Cargo.toml`.
 
 [1]: https://jsonnet.org/
 [2]: https://zed.dev/
