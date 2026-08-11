@@ -3,8 +3,8 @@ name = "Jsonnet"
 description = "Jsonnet language support for Zed"
 version = "0.4.0"
 schema_version = 1
-authors = ["Vladimir Varankin <vladimir@varank.in>"]
-repository = "https://github.com/narqo/zed-jsonnet"
+authors = ["Vladimir Varankin <vladimir@varank.in>", "Y.-K. Guo <hi@guoyk.com>"]
+repository = "https://github.com/yankeguo/zed-jsonnet"
 
 [grammars.jsonnet]
 repository = "https://github.com/sourcegraph/tree-sitter-jsonnet"
