@@ -1,8 +1,13 @@
-(id) @variable
+; Comments
 (comment) @comment
+
+; Identifiers (more specific patterns below override this one)
+(id) @variable
 
 ; Literals
 (null) @constant.builtin
+; Note: escape sequences cannot be highlighted separately, the grammar's
+; scanner folds them into string_content.
 (string) @string
 (number) @number
 [
@@ -11,29 +16,35 @@
 ] @boolean
 
 ; Keywords
-"for" @repeat
+"for" @keyword.repeat
 "in" @keyword.operator
 "function" @keyword.function
 [
   "if"
   "then"
   "else"
-] @conditional
+] @keyword.conditional
 [
   (local)
   (tailstrict)
-  "function"
   "assert"
   "error"
 ] @keyword
 
+; Imports
+[
+  (import)
+  (importstr)
+] @keyword.import
+
+; Builtins
 [
   (dollar)
   (self)
   (super)
-] @variable.builtin
-((id) @variable.builtin
- (#eq? @variable.builtin "std"))
+] @variable.special
+((id) @variable.special
+ (#eq? @variable.special "std"))
 
 ; Operators
 [
@@ -72,93 +83,48 @@
   ":::"
 ] @punctuation.special
 
+; The "+" of a "field+:" merge expression
 (field
   (fieldname) "+" @punctuation.special)
 
-; Imports
-[
-  (import)
-  (importstr)
-] @include
-
-; References
-
-; Make reference same color as parameter
-; (may incur performance issues on big files)
-; Depends on locals.scm
-((id) @parameter.reference
- (#is? @parameter.reference parameter))
-
-((id) @function.reference
- (#is? @function.reference function))
-
-((id) @var.reference
- (#is? @var.reference var))
-((id) @define
- (#is? @var.reference var))
-
-; References do not apply to static field IDs
-; Workaround for `(#is-not? local)` not supported
-(fieldname (id) @field)
-(fieldname (string
-             (string_start) @text.strong
-             (string_content) @field
-             (string_end) @text.strong
-           ))
-
-; But it does apply if ID in an expression
+; Field names are properties, not variables
+(fieldname (id) @property)
 (fieldname
- ("["
-  (id) @parameter.reference
-  "]"
-  (#is? @parameter.reference parameter)))
-(fieldname
- ("["
-  (id) @define
-  "]"
-  (#is? @var.reference var)))
+  (string
+    (string_start) @emphasis.strong
+    (string_content) @property
+    (string_end) @emphasis.strong))
 
-; Functions
+; Function and method definitions
+(bind function: (id) @function)
 (field
   function: (fieldname (id) @function))
 (field
   function: (fieldname
-              (string
-                (string_start) @text.strong
-                (string_content) @function
-                (string_end) @text.strong
-              )))
+    (string
+      (string_start) @emphasis.strong
+      (string_content) @function
+      (string_end) @emphasis.strong)))
+
+; Parameters, both in definitions and in named call arguments
 (param
-  identifier: (id) @parameter)
+  identifier: (id) @variable.parameter)
+(named_argument
+  (id) @variable.parameter)
 
-(bind (id) @define)
-(bind function: (id) @function)
-
-; Function call
+; Function calls
+(functioncall
+  .
+  (id) @function.call)
 (functioncall
   (fieldaccess
-    last: (id) @function.call
-  )?
+    last: (id) @function.call))
+(functioncall
   (fieldaccess_super
-    (id) @function.call
-  )?
-  (id)? @function.call
-  "("
-  (args
-    (named_argument
-      (id) @parameter
-    )
-  )?
-  ")"
-)
+    (id) @function.call))
 
-; Emphasize implicit plus usage
+; Emphasize implicit plus usage (adjacent objects merged without "+")
 (implicit_plus
-  (_ "}"? @text.danger)
+  (_ "}"? @emphasis.strong)
   (object
-    "{" @text.danger
-  )
-)
-
-; ERROR
-(ERROR) @error
+    "{" @emphasis.strong))

@@ -1,9 +1,17 @@
 (local_bind
   (local) @context
-  (bind (id) @name)
-) @item
+  (bind
+    .
+    (id) @name
+    (params)? @context.extra)) @item
 
-(
-  field
-  (fieldname) @name
-) @item
+(field
+  (fieldname
+    (id) @name)
+  (params)? @context.extra) @item
+
+(field
+  (fieldname
+    (string
+      (string_content) @name))
+  (params)? @context.extra) @item
