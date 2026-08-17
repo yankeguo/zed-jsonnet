@@ -10,19 +10,42 @@ use zed_extension_api::{
 
 const LSP_GITHUB_REPO: &str = "grafana/jsonnet-language-server";
 const GITHUB_TOKEN_ENV_VAR: &str = "GITHUB_TOKEN";
+const ZED_JSONNET_GITHUB_TOKEN_ENV_VAR: &str = "ZED_JSONNET_GITHUB_TOKEN";
 
-/// Returns the `GITHUB_TOKEN` from the user's shell environment, if any.
+/// Returns a GitHub token from the `gh` CLI, if it is installed and
+/// authenticated.
+///
+/// The extension runs inside a sandboxed WASI environment, so the user's
+/// shell environment is forwarded explicitly to let the host resolve `gh`
+/// on the user's `PATH`.
+fn gh_cli_token(worktree: &zed::Worktree) -> Option<String> {
+    let output = zed::process::Command::new("gh")
+        .arg("auth")
+        .arg("token")
+        .envs(worktree.shell_env())
+        .output()
+        .ok()?;
+    if output.status != Some(0) {
+        return None;
+    }
+    let token = String::from_utf8(output.stdout).ok()?;
+    let token = token.trim();
+    (!token.is_empty()).then(|| token.to_string())
+}
+
+/// Returns the named environment variable from the user's shell environment,
+/// if set and non-empty.
 ///
 /// The Zed extension API offers no secure credential storage, so the token is
 /// read from the shell environment instead of being stored in plain text in
 /// `settings.json`.
-fn github_token(worktree: &zed::Worktree) -> Option<String> {
+fn shell_env_var(worktree: &zed::Worktree, name: &str) -> Option<String> {
     worktree
         .shell_env()
         .into_iter()
-        .find(|(name, _)| name == GITHUB_TOKEN_ENV_VAR)
+        .find(|(key, _)| key == name)
         .map(|(_, value)| value)
-        .filter(|token| !token.is_empty())
+        .filter(|value| !value.is_empty())
 }
 
 /// Fetches the latest GitHub release through the GitHub REST API,
@@ -98,7 +121,10 @@ impl JsonnetExtension {
             &language_server_id,
             &zed::LanguageServerInstallationStatus::CheckingForUpdate,
         );
-        let release = match github_token(worktree) {
+        let release = match gh_cli_token(worktree)
+            .or_else(|| shell_env_var(worktree, ZED_JSONNET_GITHUB_TOKEN_ENV_VAR))
+            .or_else(|| shell_env_var(worktree, GITHUB_TOKEN_ENV_VAR))
+        {
             Some(token) => latest_github_release_with_token(&token)?,
             None => zed::latest_github_release(
                 LSP_GITHUB_REPO,

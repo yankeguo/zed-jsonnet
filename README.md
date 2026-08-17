@@ -2,7 +2,7 @@
 
 [Jsonnet][1] language support for the [Zed][2] editor.
 
-This project is a hard fork of [narqo/zed-jsonnet][6], originally created by
+This project is a hard fork of [narqo/zed-jsonnet][7], originally created by
 Vladimir Varankin <vladimir@varank.in>, and continues to be distributed under
 the Apache License 2.0.
 
@@ -32,7 +32,7 @@ To update the extension later, pull the repository and run
 ## Features
 
 - Syntax highlighting, code folding, outline, auto-indentation and bracket
-  matching powered by [tree-sitter-jsonnet][7]
+  matching powered by [tree-sitter-jsonnet][8]
 - Full language server integration (completion, go-to-definition, diagnostics,
   hover) via [jsonnet-language-server][], automatically downloaded and kept up
   to date
@@ -62,17 +62,22 @@ The extension downloads the [jsonnet-language-server][] binary from GitHub
 releases. Unauthenticated requests to the GitHub API are [rate limited][4],
 which may cause the download to fail with an "API rate limit exceeded" error.
 
-To avoid this, you can export a [GitHub personal access token][5] (no scopes
-are required for public repositories) as the `GITHUB_TOKEN` environment
-variable in your shell profile (e.g. `~/.zshrc`):
+To avoid this, the extension first tries the [GitHub CLI][5] (`gh auth token`)
+if you have it installed and authenticated. If that fails, it falls back to a
+[GitHub personal access token][6] (no scopes are required for public
+repositories) exported as an environment variable in your shell profile (e.g.
+`~/.zshrc`).
+
+The extension-specific `ZED_JSONNET_GITHUB_TOKEN` variable takes precedence
+over the generic `GITHUB_TOKEN`, so it does not interfere with other tools:
 
 ```
-export GITHUB_TOKEN=ghp_...
+export ZED_JSONNET_GITHUB_TOKEN=ghp_...
 ```
 
-The extension reads the token from your shell environment, so it never has to
-be stored in plain text in `settings.json`. The token is only used by the
-extension to query the latest release and is never passed to the language
+The extension reads the token from `gh` or your shell environment, so it never
+has to be stored in plain text in `settings.json`. The token is only used by
+the extension to query the latest release and is never passed to the language
 server.
 
 ## Development
@@ -87,7 +92,8 @@ both `extension.toml` and `Cargo.toml`.
 [2]: https://zed.dev/
 [3]: https://zed.dev/docs/extensions/developing-extensions
 [4]: https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
-[5]: https://github.com/settings/tokens
-[6]: https://github.com/narqo/zed-jsonnet
-[7]: https://github.com/sourcegraph/tree-sitter-jsonnet
+[5]: https://cli.github.com/
+[6]: https://github.com/settings/tokens
+[7]: https://github.com/narqo/zed-jsonnet
+[8]: https://github.com/sourcegraph/tree-sitter-jsonnet
 [jsonnet-language-server]: https://github.com/grafana/jsonnet-language-server
