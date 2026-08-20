@@ -24,8 +24,14 @@ fn gh_cli_token(worktree: &zed::Worktree) -> Option<String> {
         .arg("token")
         .envs(worktree.shell_env())
         .output()
+        .map_err(|err| eprintln!("zed-jsonnet: failed to run `gh auth token`: {err}"))
         .ok()?;
     if output.status != Some(0) {
+        eprintln!(
+            "zed-jsonnet: `gh auth token` exited with status {:?}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
         return None;
     }
     let token = String::from_utf8(output.stdout).ok()?;
@@ -121,18 +127,48 @@ impl JsonnetExtension {
             &language_server_id,
             &zed::LanguageServerInstallationStatus::CheckingForUpdate,
         );
-        let release = match gh_cli_token(worktree)
-            .or_else(|| shell_env_var(worktree, ZED_JSONNET_GITHUB_TOKEN_ENV_VAR))
-            .or_else(|| shell_env_var(worktree, GITHUB_TOKEN_ENV_VAR))
-        {
-            Some(token) => latest_github_release_with_token(&token)?,
-            None => zed::latest_github_release(
-                LSP_GITHUB_REPO,
-                zed::GithubReleaseOptions {
-                    require_assets: true,
-                    pre_release: false,
-                },
-            )?,
+        let (token, token_source) = gh_cli_token(worktree)
+            .map(|token| (token, "gh CLI (`gh auth token`)"))
+            .or_else(|| {
+                shell_env_var(worktree, ZED_JSONNET_GITHUB_TOKEN_ENV_VAR)
+                    .map(|token| (token, "ZED_JSONNET_GITHUB_TOKEN environment variable"))
+            })
+            .or_else(|| {
+                shell_env_var(worktree, GITHUB_TOKEN_ENV_VAR)
+                    .map(|token| (token, "GITHUB_TOKEN environment variable"))
+            })
+            .unzip();
+        let release = match token {
+            Some(token) => {
+                let token_source = token_source.unwrap_or("unknown source");
+                eprintln!(
+                    "zed-jsonnet: fetching latest release with GitHub token from {token_source}"
+                );
+                latest_github_release_with_token(&token).map_err(|err| {
+                    format!("{err} (authenticated with GitHub token from {token_source})")
+                })?
+            }
+            None => {
+                eprintln!(
+                    "zed-jsonnet: no GitHub token found (tried gh CLI, \
+                     {ZED_JSONNET_GITHUB_TOKEN_ENV_VAR}, {GITHUB_TOKEN_ENV_VAR}); \
+                     using unauthenticated GitHub API, subject to rate limiting"
+                );
+                zed::latest_github_release(
+                    LSP_GITHUB_REPO,
+                    zed::GithubReleaseOptions {
+                        require_assets: true,
+                        pre_release: false,
+                    },
+                )
+                .map_err(|err| {
+                    format!(
+                        "{err} (no GitHub token found: tried gh CLI, \
+                         {ZED_JSONNET_GITHUB_TOKEN_ENV_VAR}, {GITHUB_TOKEN_ENV_VAR}; \
+                         unauthenticated GitHub API is rate-limited per IP)"
+                    )
+                })?
+            }
         };
 
         let (platform, arch) = zed::current_platform();
